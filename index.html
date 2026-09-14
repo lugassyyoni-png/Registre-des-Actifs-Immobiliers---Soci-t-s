@@ -10,17 +10,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-<div id="lock-screen" style="max-width:400px; margin:80px auto; font-family:-apple-system,Helvetica,Arial,sans-serif; background:#FBF7EE; border:1px solid #DCD2B8; border-top:3px solid #B08D57; border-radius:14px; padding:32px; text-align:center;">
+<div id="google-gate" style="max-width:400px; margin:80px auto; font-family:-apple-system,Helvetica,Arial,sans-serif; background:#FBF7EE; border:1px solid #DCD2B8; border-top:3px solid #B08D57; border-radius:14px; padding:32px; text-align:center;">
   <div style="font-family:'Fraunces',Georgia,serif; font-size:21px; color:#1C2333; margin-bottom:6px;">Registre des actifs immobiliers</div>
-  <div style="font-size:12.5px; color:#948B72; margin-bottom:20px;">Accès protégé — entrez le mot de passe</div>
-  <form id="lock-form" autocomplete="on">
-    <input type="text" name="username" autocomplete="username" value="registre-lce" readonly style="position:absolute; opacity:0; height:0; width:0; border:0; padding:0;" tabindex="-1" aria-hidden="true">
-    <input type="password" id="lock-input" name="password" autocomplete="current-password" placeholder="Mot de passe" style="width:100%; padding:10px 12px; border:1px solid #DCD2B8; border-radius:8px; font-size:14px; margin-bottom:10px; box-sizing:border-box;">
-    <button type="submit" id="lock-submit" style="width:100%; padding:10px 12px; border:none; background:#1C2333; color:#FBF7EE; border-radius:8px; font-size:14px; cursor:pointer;">Accéder</button>
-  </form>
-  <div id="lock-error" style="color:#D2543B; font-size:12px; margin-top:10px; display:none;">Mot de passe incorrect.</div>
+  <div style="font-size:12.5px; color:#948B72; margin-bottom:22px;">Connexion requise — seules les adresses autorisées peuvent accéder aux données</div>
+  <div id="google-btn" style="display:flex; justify-content:center;"></div>
+    <div id="google-gate-error" style="color:#D2543B; font-size:12px; margin-top:14px; display:none;">Ce compte Google n'est pas autorisé à accéder à ce registre.</div>
 </div>
 <div id="sci-app" style="display:none;"></div>
 <datalist id="banks-list">
@@ -51,35 +48,54 @@
 </datalist>
 <script>
 (function(){
-  const SITE_PASSWORD = 'LCE-patrimoine-26';
-  const lockScreen = document.getElementById('lock-screen');
-  const appEl = document.getElementById('sci-app');
-  const form = document.getElementById('lock-form');
-  const input = document.getElementById('lock-input');
-  const errorEl = document.getElementById('lock-error');
+  const GOOGLE_CLIENT_ID = '600120404922-d4k9pketc06cvdl2bhgnfvl0rvtl19lb.apps.googleusercontent.com';
 
-  function tryUnlock(){
-    if (input.value === SITE_PASSWORD) {
-      try { sessionStorage.setItem('lce-registre-unlocked', 'yes'); } catch(e) {}
-      lockScreen.style.display = 'none';
-      appEl.style.display = 'block';
-    } else {
-      errorEl.style.display = 'block';
-      input.value = '';
-      input.focus();
+    const googleGate = document.getElementById('google-gate');
+    const googleGateError = document.getElementById('google-gate-error');
+    const appEl = document.getElementById('sci-app');
+
+    let googleInitDone = false;
+    let googleInitAttempts = 0;
+    function initGoogleSignIn(){
+          if (googleInitDone) return;
+          if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+                  googleInitAttempts++;
+                  if (googleInitAttempts > 25) {
+                            googleGateError.textContent = "Impossible de charger la connexion Google. Vérifiez votre connexion internet et rechargez la page.";
+                            googleGateError.style.display = 'block';
+                            return;
+                  }
+                  setTimeout(initGoogleSignIn, 200);
+                  return;
+          }
+          googleInitDone = true;
+          window.google.accounts.id.initialize({
+                  client_id: GOOGLE_CLIENT_ID,
+                  callback: onGoogleCredential
+          });
+          window.google.accounts.id.renderButton(document.getElementById('google-btn'), {
+                  theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: 320
+          });
     }
-  }
 
-  let alreadyUnlocked = false;
-  try { alreadyUnlocked = sessionStorage.getItem('lce-registre-unlocked') === 'yes'; } catch(e) {}
+    function onGoogleCredential(response){
+          googleGateError.style.display = 'none';
+          window.GOOGLE_ID_TOKEN = response.credential;
+          googleGate.style.display = 'none';
+          appEl.style.display = 'block';
+          if (typeof window.startApp === 'function') {
+                  window.startApp();
+          } else {
+                  window.__pendingAppStart = true;
+          }
+    }
+    window.onGoogleAuthRejected = function(){
+          appEl.style.display = 'none';
+          googleGate.style.display = 'block';
+          googleGateError.style.display = 'block';
+    };
 
-  if (alreadyUnlocked) {
-    lockScreen.style.display = 'none';
-    appEl.style.display = 'block';
-  } else {
-    form.addEventListener('submit', function(e){ e.preventDefault(); tryUnlock(); });
-    input.focus();
-  }
+    initGoogleSignIn();
 })();
 </script>
 <style>
@@ -301,6 +317,44 @@ html, body {
 #sci-app .loyer-month-row select { flex: 0 0 120px; font-family: -apple-system, sans-serif; font-size: 12px; padding: 5px 7px; border: 1px solid #DCD2B8; background: #FFFEFB; border-radius: 6px; }
 #sci-app .loyer-month-row input[type=date] { flex: 0 0 140px; font-family: -apple-system, sans-serif; font-size: 12px; padding: 5px 7px; border: 1px solid #DCD2B8; background: #FFFEFB; border-radius: 6px; }
 #sci-app .loyer-month-row input[type=text] { flex: 0 0 100px; font-family: -apple-system, sans-serif; font-size: 12px; padding: 5px 7px; border: 1px solid #DCD2B8; background: #FFFEFB; border-radius: 6px; }
+
+  #sci-app .sidebar-legend { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: 0 12px 12px; font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 10.5px; color: #948B72; }
+  #sci-app .sidebar-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  #sci-app .sidebar-legend .ldot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  #sci-app .incomplete-tag { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 700; color: #B08D57; text-transform: uppercase; letter-spacing: 0.3px; }
+  #sci-app .masthead-actions { display: flex; align-items: center; gap: 10px; }
+  #sci-app .menu-toggle {
+    display: none; font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 12.5px; font-weight: 600;
+    background: transparent; color: #FBF7EE; border: 1px solid #57607A; border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  }
+  #sci-app .menu-toggle:hover { border-color: #B08D57; }
+  @media (max-width: 760px) {
+    #sci-app .masthead { padding: 18px 18px 16px; flex-wrap: wrap; gap: 10px; }
+    #sci-app .masthead h1 { font-size: 21px; }
+    #sci-app .menu-toggle { display: inline-block; }
+    #sci-app .body { flex-direction: column; }
+    #sci-app .index {
+      display: none; width: 100%; max-height: 60vh; overflow-y: auto;
+      border-right: none; border-bottom: 2px solid #DCD2B8;
+    }
+    #sci-app .index.index-open { display: block; }
+    #sci-app .detail { padding: 20px 16px; max-width: 100%; }
+    #sci-app .facade, #sci-app .facade-upload-wrap { max-height: 220px; }
+    #sci-app .detail h2 { font-size: 19px; }
+    #sci-app .hero-stat-value { font-size: 30px; }
+    #sci-app .ov-item { flex: 1 1 45%; }
+    #sci-app .row { flex-direction: column; align-items: flex-start; gap: 2px; }
+    #sci-app .row .k { width: auto; }
+    #sci-app .row .v { min-width: 0; width: 100%; }
+    #sci-app .id-field { flex-wrap: wrap; }
+    #sci-app .id-value { text-align: left; }
+    #sci-app .doc-row { flex-wrap: wrap; }
+    #sci-app .doc-row input:first-child { flex: 1 1 100%; }
+    #sci-app .doc-row input:last-child { flex: 1 1 100%; }
+    #sci-app .gen-row { flex-wrap: wrap; }
+    #sci-app .month-row, #sci-app .loyer-month-row, #sci-app .credit-month-row { flex-wrap: wrap; }
+    #sci-app .foot { padding: 10px 16px; }
+  }
 </style>
 <script>
 (function(){
@@ -324,6 +378,7 @@ html, body {
   let genDraftUrl = null;
   let revisionFormOpen = false;
   let sidebarSearch = '';
+  let mobileSidebarOpen = false;
   let docAnalysisBusy = false;
   let docUploadBusyIndex = null;
   let docUploadError = '';
@@ -445,7 +500,7 @@ html, body {
 
   async function load(){
     try {
-      const res = await fetch(BACKEND_URL + '?key=' + encodeURIComponent(API_KEY));
+          const res = await fetch(BACKEND_URL + '?key=' + encodeURIComponent(API_KEY) + '&id_token=' + encodeURIComponent(window.GOOGLE_ID_TOKEN || ''));
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       scis = (json.scis && json.scis.length) ? json.scis : defaultScis;
@@ -480,7 +535,7 @@ html, body {
       return false;
     }
     try {
-      const res = await fetch(BACKEND_URL + '?key=' + encodeURIComponent(API_KEY));
+            const res = await fetch(BACKEND_URL + '?key=' + encodeURIComponent(API_KEY) + '&id_token=' + encodeURIComponent(window.GOOGLE_ID_TOKEN || ''));
       const remote = await res.json();
       const remoteScis = remote.scis || [];
       const remoteProps = remote.properties || [];
@@ -502,7 +557,7 @@ html, body {
 
       const postRes = await fetch(BACKEND_URL, {
         method: 'POST',
-        body: JSON.stringify({ key: API_KEY, scis: mergedScis, properties: mergedProps })
+              body: JSON.stringify({ key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''), scis: mergedScis, properties: mergedProps })
       });
       const json = await postRes.json();
       if (json.error) throw new Error(json.error);
@@ -535,7 +590,7 @@ html, body {
       if (!rev) { if (draftWin) draftWin.close(); genMessage = 'Aucune révision enregistrée pour ce bien.'; render(); return; }
       periodeForHistory = 'Effet au ' + new Date(rev.date_effet).toLocaleDateString('fr-FR');
       payload = {
-        key: API_KEY,
+              key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''),
         action: 'generateDocument',
         docType: 'revision',
         periode: periodeForHistory,
@@ -559,7 +614,7 @@ html, body {
       if (!montantTaxe) { if (draftWin) draftWin.close(); genMessage = 'Aucun montant de taxe foncière connu pour cette année.'; render(); return; }
       periodeForHistory = String(genYear);
       payload = {
-        key: API_KEY,
+              key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''),
         action: 'generateDocument',
         docType: 'taxe_fonciere',
         periode: periodeForHistory,
@@ -578,7 +633,7 @@ html, body {
       const tvaTauxPct = Math.round(tvaRateFor(p) * 100);
       periodeForHistory = label;
       payload = {
-        key: API_KEY,
+              key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''),
         action: 'generateDocument',
         docType: genDocType,
         periode: label,
@@ -720,16 +775,16 @@ html, body {
   };
 
   const TABS = [
-    { id: 'identification', label: 'Identification', color: '#6B7280' },
-    { id: 'financement', label: 'Crédit', color: '#2F6FB0' },
-    { id: 'location', label: 'Locataire', color: '#2E8A57' },
-    { id: 'loyer', label: 'Loyer', color: '#3A7D6E' },
-    { id: 'bail', label: 'Caractéristiques du bail', color: '#8A5A3B' },
-    { id: 'echeances', label: 'Taxe foncière', color: '#C9711F' },
-    { id: 'assurance', label: 'Assurance & copro', color: '#7A4DB3' },
-    { id: 'documents', label: 'Documents', color: '#A9843C' },
+    { id: 'identification', label: 'Identification', color: '#1C2333' },
+    { id: 'financement', label: 'Crédit', color: '#1C2333' },
+    { id: 'location', label: 'Locataire', color: '#1C2333' },
+    { id: 'loyer', label: 'Loyer', color: '#1C2333' },
+    { id: 'bail', label: 'Caractéristiques du bail', color: '#1C2333' },
+    { id: 'echeances', label: 'Taxe foncière', color: '#1C2333' },
+    { id: 'assurance', label: 'Assurance & copro', color: '#1C2333' },
+    { id: 'documents', label: 'Documents', color: '#1C2333' },
     { id: 'generation', label: 'Générer un document', color: '#1C2333' }
-  ];
+      ];
 
   function monthLabel(ym){
     if (!ym) return '';
@@ -1559,7 +1614,7 @@ html, body {
     const loyerAlertsHtml = loyerAlerts.map(a => `<div class="alert-row urgent">${a.text}</div>`).join('');
     const upcomingRentHtml = getUpcomingRentAlerts(properties).map(a => `<div class="alert-row">${a.text}</div>`).join('');
     const echAlertsHtml = alerts.map(a => `<div class="alert-row ${a.days<=7?'urgent':''}">${alertText(a)}</div>`).join('');
-    const alertsHtml = (loyerAlertsHtml + upcomingRentHtml + echAlertsHtml) || `<div class="gen-note">Aucune échéance dans les 90 prochains jours.</div>`;
+        const alertsHtml = (loyerAlertsHtml + upcomingRentHtml + echAlertsHtml) || `<div class="gen-note">Aucune alerte à signaler pour le moment.</div>`;
 
     const listHtml = properties.map(p => `
       <div class="pl-row" data-goto="${p.id}">
@@ -1574,7 +1629,7 @@ html, body {
       <div class="addr-city">${scis.length} SCI — ${properties.length} biens</div>
       ${hero}
       ${metrics}
-      ${sectionHeader('Échéances à venir')}
+            ${sectionHeader('Alertes & échéances')}
       <div class="panel">${alertsHtml}</div>
       ${sectionHeader('Tous les biens')}
       <div class="panel portfolio-list">${listHtml}</div>
@@ -1660,6 +1715,14 @@ html, body {
 
     let indexHtml = `<div class="overview-btn ${viewMode==='overview'?'active':''}" id="go-overview">Vue d'ensemble</div>`;
     indexHtml += `<input id="sidebar-search" type="text" class="sidebar-search-input" placeholder="Rechercher un bien..." value="${esc(sidebarSearch)}">`;
+    indexHtml += `
+    <div class="sidebar-legend">
+    <span><span class="ldot status-ok"></span>À jour</span>
+    <span><span class="ldot status-partiel"></span>Partiel</span>
+    <span><span class="ldot status-late"></span>Impayé</span>
+    <span><span class="ldot status-unknown"></span>Non renseigné</span>
+    </div>
+    `;
     const searchActive = sidebarSearch.trim().length > 0;
     const searchLower = sidebarSearch.trim().toLowerCase();
     scis.forEach(s => {
@@ -1676,11 +1739,16 @@ html, body {
       if (expanded) {
         items.forEach(prop => {
           const noEmail = !prop.locataire_email;
+          const incomplete = !parseNum(prop.valeur) && !parseNum(prop.prix_achat);
+          const tagsHtml = [
+            noEmail ? '<span title="Email locataire manquant" style="color:#B0452E; font-size:11px;">✉︎!</span>' : '',
+            incomplete ? '<span class="incomplete-tag">À compléter</span>' : ''
+            ].filter(Boolean).join(' ');
           indexHtml += `
             <div class="index-item ${viewMode==='detail' && prop.id===selectedId?'active':''}" data-id="${prop.id}">
-              <span class="index-label">${esc(propLabel(prop))}${noEmail ? ' <span title="Email locataire manquant" style="color:#B0452E; font-size:11px;">✉︎!</span>' : ''}</span>
+                                          <span class="index-label">${esc(propLabel(prop))}${tagsHtml ? `<br>${tagsHtml}` : ''}</span>
               <span class="index-status ${statusDot(computePaymentStatus(prop).key)}"></span>
-            </div>
+                                  </div>
           `;
         });
       }
@@ -1770,7 +1838,10 @@ html, body {
             <h1>Registre des actifs immobiliers</h1>
             <div class="sub">${properties.length} bien${properties.length>1?'s':''} — ${scis.length} SCI</div>
           </div>
-          ${urgentCount ? `<span class="alert-pill">${urgentCount} échéance${urgentCount>1?'s':''} à 30 j</span>` : ''}
+                    <div class="masthead-actions">
+                    ${urgentCount ? `<span class="alert-pill">${urgentCount} échéance${urgentCount>1?'s':''} à 30 j</span>` : ''}
+                    <button type="button" class="menu-toggle" id="menu-toggle">☰ Biens</button>
+                    </div>
         </div>
         <div class="body">
           <div class="index">${indexHtml}</div>
@@ -1787,8 +1858,11 @@ html, body {
       </div>
     `;
 
+const menuToggle = document.getElementById('menu-toggle');
+    if (menuToggle) menuToggle.addEventListener('click', () => { mobileSidebarOpen = !mobileSidebarOpen; render(); });
+    
     const goOverview = document.getElementById('go-overview');
-    if (goOverview) goOverview.addEventListener('click', () => { viewMode = 'overview'; render(); });
+        if (goOverview) goOverview.addEventListener('click', () => { viewMode = 'overview'; mobileSidebarOpen = false; render(); });
 
     app.querySelectorAll('.copy-field-btn').forEach(el => {
       el.addEventListener('click', () => {
@@ -1886,11 +1960,11 @@ html, body {
     });
 
     app.querySelectorAll('.index-item').forEach(el => {
-      el.addEventListener('click', () => { selectedId = el.dataset.id; touchedPropertyIds.add(selectedId); selectedSciId = properties.find(x=>x.id===el.dataset.id).sci_id; viewMode = 'detail'; openTab = null; tabEditMode = false; expandedLoyerYear = null; expandedCreditYear = null; genPeriodType = null; genYear = null; genMonth = null; genQuarter = null; genMessage = ''; genDraftUrl = null; revisionFormOpen = false; docAnalysisResult = null; docAnalysisError = ''; docUploadError = ''; render(); });
+            el.addEventListener('click', () => { selectedId = el.dataset.id; touchedPropertyIds.add(selectedId); selectedSciId = properties.find(x=>x.id===el.dataset.id).sci_id; viewMode = 'detail'; openTab = null; tabEditMode = false; expandedLoyerYear = null; expandedCreditYear = null; genPeriodType = null; genYear = null; genMonth = null; genQuarter = null; genMessage = ''; genDraftUrl = null; revisionFormOpen = false; docAnalysisResult = null; docAnalysisError = ''; docUploadError = ''; mobileSidebarOpen = false; render(); });
     });
 
     app.querySelectorAll('.pl-row').forEach(el => {
-      el.addEventListener('click', () => { selectedId = el.dataset.goto; touchedPropertyIds.add(selectedId); viewMode = 'detail'; openTab = null; render(); });
+            el.addEventListener('click', () => { selectedId = el.dataset.goto; touchedPropertyIds.add(selectedId); viewMode = 'detail'; openTab = null; mobileSidebarOpen = false; render(); });
     });
 
     app.querySelectorAll('.tab-btn').forEach(el => {
@@ -1997,7 +2071,7 @@ html, body {
             try {
               const res = await fetch(BACKEND_URL, {
                 method: 'POST',
-                body: JSON.stringify({ key: API_KEY, action: 'uploadDocument', fileBase64: base64, mimeType: file.type || 'application/octet-stream', fileName: file.name || (p.documents[idx].label || 'document') })
+                              body: JSON.stringify({ key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''), action: 'uploadDocument', fileBase64: base64, mimeType: file.type || 'application/octet-stream', fileName: file.name || (p.documents[idx].label || 'document') })
               });
               const data = await res.json();
               if (data.error) { docUploadError = 'Échec de l\'upload : ' + data.error; }
@@ -2068,7 +2142,7 @@ html, body {
             try {
               const res = await fetch(BACKEND_URL, {
                 method: 'POST',
-                body: JSON.stringify({ key: API_KEY, action: 'analyzeDocument', fileBase64: base64, mimeType: file.type || 'application/pdf' })
+                              body: JSON.stringify({ key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''), action: 'analyzeDocument', fileBase64: base64, mimeType: file.type || 'application/pdf' })
               });
               const data = await res.json();
               if (data.error) { docAnalysisError = 'Erreur : ' + data.error; }
@@ -2380,7 +2454,12 @@ html, body {
     }
   }
 
-  load();
+      // L'app ne démarre son chargement des données qu'une fois la connexion
+  // Google validée (voir le script en haut de page) : c'est ce jeton, envoyé
+  // à chaque requête, que le backend doit vérifier pour restreindre l'accès
+  // aux adresses autorisées.
+  window.startApp = load;
+  if (window.__pendingAppStart) { load(); }
 })();
 </script>
 </body>
