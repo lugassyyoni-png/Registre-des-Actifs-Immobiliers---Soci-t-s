@@ -46,6 +46,17 @@
   <option value="Banque Marze">
   <option value="Banque Nuger">
 </datalist>
+<datalist id="doc-type-list">
+  <option value="Bail commercial">
+  <option value="État des lieux d'entrée">
+  <option value="État des lieux de sortie">
+  <option value="Attestation d'assurance locataire">
+  <option value="Attestation d'assurance PNO (propriétaire)">
+  <option value="Diagnostics techniques">
+  <option value="Avis de taxe foncière">
+  <option value="Tableau d'amortissement du prêt">
+  <option value="Avenant au bail">
+</datalist>
 <script>
 (function(){
   const GOOGLE_CLIENT_ID = '600120404922-d4k9pketc06cvdl2bhgnfvl0rvtl19lb.apps.googleusercontent.com';
@@ -1537,7 +1548,7 @@ html, body {
                </label>`;
           return `
           <div class="doc-row" data-doc="${i}">
-            <input type="text" class="doc-label" value="${esc(d.label)}" placeholder="Nom du document">
+            <input type="text" class="doc-label" value="${esc(d.label)}" placeholder="Nom du document" list="doc-type-list">
             ${linkOrUpload}
             <button class="doc-del" title="Supprimer">✕</button>
           </div>
