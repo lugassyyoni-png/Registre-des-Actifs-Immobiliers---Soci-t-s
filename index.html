@@ -667,6 +667,10 @@ html, body {
         }
         if (!p.documents_generes) p.documents_generes = [];
         p.documents_generes.push({ date: new Date().toISOString(), docType: genDocType, periode: periodeForHistory });
+        if (data.docUrl) {
+          if (!p.documents) p.documents = [];
+          p.documents.push({ label: data.docName || (genDocType + ' - ' + periodeForHistory), lien: data.docUrl });
+        }
         save();
       }
       else { genMessage = 'Réponse inattendue du serveur.'; if (draftWin && !draftWin.closed) draftWin.close(); }
