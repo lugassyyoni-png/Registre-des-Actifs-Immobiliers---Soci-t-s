@@ -450,6 +450,7 @@ html, body {
       bail_surface:'', bail_tva:'',
       taxe_fonciere_montant:'', taxe_fonciere_historique: [],
       assurance_nom:'', assurance_police:'', assurance_date:'', assurance_recurrence:'', syndic_nom:'', syndic_contact:'', charges_copro:'',
+      surfaces: [],
       documents:[] };
   }
 
@@ -728,6 +729,37 @@ html, body {
     return n.toLocaleString('fr-FR') + ' €';
   }
 
+  function formatSurface(n){
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    return n.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  }
+
+  // Coefficients de pondération par défaut selon le niveau (éditables ligne par
+  // ligne) : RDC 100%, sous-sol 30%, cave 25%, étage/mezzanine 50% (100% si
+  // entrée indépendante — à ajuster manuellement dans ce cas).
+  const NIVEAU_COEF_DEFAULTS = {
+    'rdc': 100, 'rez-de-chaussée': 100, 'rez de chaussée': 100,
+    'sous-sol': 30, 'sous sol': 30, 'ss': 30, 'terrasse': 30,
+    'étage': 50, 'etage': 50, '1er étage': 50, '1er etage': 50, '2e étage': 50, '2e etage': 50, 'mezzanine': 50,
+    'cave': 25, 'réserve': 20, 'reserve': 20
+  };
+  function suggestCoefSurface(niveau){
+    const key = (niveau||'').trim().toLowerCase();
+    return NIVEAU_COEF_DEFAULTS.hasOwnProperty(key) ? NIVEAU_COEF_DEFAULTS[key] : null;
+  }
+  function surfaceTotals(p){
+    const rows = p.surfaces || [];
+    let brute = 0, ponderee = 0;
+    rows.forEach(r => {
+      const m2 = parseNum(r.m2) || 0;
+      const coefParsed = parseNum(r.coef);
+      const coef = (coefParsed === null) ? 100 : coefParsed;
+      brute += m2;
+      ponderee += m2 * (coef/100);
+    });
+    return { brute, ponderee };
+  }
+
   function daysUntil(dateStr){
     if (!dateStr) return null;
     const d = new Date(dateStr);
@@ -769,6 +801,7 @@ html, body {
     loyer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 9h4a2 2 0 010 4H9"/><path d="M9 13h4"/><path d="M11 7v2"/><path d="M11 15v2"/></svg>',
     documents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M13 3v5h5"/></svg>',
     bail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4h9a1 1 0 011 1v14a1 1 0 01-1 1H9"/><path d="M9 4L6 6v13l3 1"/><path d="M12 10h4"/><path d="M12 14h4"/></svg>',
+    surface: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
     echeances: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>',
     assurance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/></svg>',
     generation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
@@ -780,6 +813,7 @@ html, body {
     { id: 'location', label: 'Locataire', color: '#1C2333' },
     { id: 'loyer', label: 'Loyer', color: '#1C2333' },
     { id: 'bail', label: 'Caractéristiques du bail', color: '#1C2333' },
+    { id: 'surface', label: 'Surface', color: '#1C2333' },
     { id: 'echeances', label: 'Taxe foncière', color: '#1C2333' },
     { id: 'assurance', label: 'Assurance & copro', color: '#1C2333' },
     { id: 'documents', label: 'Documents', color: '#1C2333' },
@@ -1372,9 +1406,61 @@ html, body {
         { key: 'bail_franchise', label: 'Franchise de loyer', placeholder: "ex. Jusqu'au 22/01/2026" },
         { key: 'bail_depot_garantie', label: 'Dépôt de garantie' },
         { key: 'bail_droit_entree', label: "Droit d'entrée encaissé" },
-        { key: 'bail_surface', label: 'Surface', placeholder: 'ex. 49,36 m²' },
         { key: 'bail_tva', label: 'TVA', type: 'select', options: [['', 'Non renseigné'], ['Assujetti', 'Assujetti'], ['Non assujetti', 'Non assujetti']] }
       ]);
+    }
+    if (tab === 'surface') {
+      const { brute, ponderee } = surfaceTotals(p);
+      const hasSurfaces = (p.surfaces || []).length > 0;
+      const legacyVal = parseNum(p.bail_surface);
+      const legacyBlock = (!hasSurfaces && legacyVal) ? `
+        <div class="gen-note" style="margin-top:10px; padding:10px 12px; border:1px solid #E7DAB0; background:#FBF3DE; border-radius:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; color:#6B5F3C;">
+          <span class="sans">Ancien champ Surface détecté : <b>${esc(p.bail_surface)}</b> — pas encore repris dans la liste.</span>
+          <button id="surf-legacy-btn" class="sans" style="border:none; background:#1C2333; color:#FBF7EE; font-size:12px; padding:7px 12px; cursor:pointer; border-radius:7px;">Reprendre comme RDC</button>
+        </div>
+      ` : '';
+      if (tabEditMode) {
+        const rowsHtml = (p.surfaces || []).map((r,i) => `
+          <div class="surf-row" data-surf="${i}" style="display:flex; gap:8px; margin-bottom:7px; align-items:center;">
+            <input type="text" class="surf-niveau sans" list="niveau-list-surface" placeholder="ex. RDC" value="${esc(r.niveau)}" style="flex:1 1 150px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
+            <input type="text" class="surf-m2 sans" inputmode="decimal" placeholder="m²" value="${esc(r.m2)}" style="flex:0 0 90px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
+            <input type="text" class="surf-coef sans" inputmode="decimal" placeholder="100" value="${(r.coef===undefined||r.coef===null)?'':esc(r.coef)}" style="flex:0 0 70px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
+            <span class="sans" style="font-size:11px; color:#948B72; flex:0 0 12px;">%</span>
+            <button class="surf-del sans" data-index="${i}" title="Supprimer ce niveau" style="border:1px solid #DCD2B8; background:#FFFEFB; color:#B0452E; font-size:12px; cursor:pointer; padding:6px 9px; border-radius:7px; flex:0 0 auto;">✕</button>
+          </div>
+        `).join('');
+        return tabHeader() + `
+          <datalist id="niveau-list-surface">
+            <option value="RDC"><option value="Sous-sol"><option value="Étage"><option value="1er étage">
+            <option value="Mezzanine"><option value="Cave"><option value="Réserve"><option value="Terrasse">
+          </datalist>
+          <div class="sans" style="display:flex; gap:8px; margin-bottom:6px; font-size:10.5px; color:#948B72; text-transform:uppercase; letter-spacing:.3px;">
+            <div style="flex:1 1 150px;">Niveau</div><div style="flex:0 0 90px;">m²</div><div style="flex:0 0 70px;">Coef. %</div><div style="flex:0 0 12px;"></div><div style="flex:0 0 35px;"></div>
+          </div>
+          <div id="surf-rows">${rowsHtml}</div>
+          <button id="add-surf" class="sans" style="margin-top:4px; font-size:12px; border:1px dashed #C9BFA8; background:none; color:#948B72; cursor:pointer; padding:8px 12px; border-radius:8px; width:100%; text-align:left;">+ Ajouter un niveau</button>
+          <div style="display:flex; gap:24px; margin-top:12px; padding-top:12px; border-top:1px solid #DCD2B8;">
+            <div class="sans"><div style="font-size:11px; color:#948B72;">Surface brute totale</div><div id="surf-tot-brute" style="font-family:'Fraunces',Georgia,serif; font-size:17px; font-weight:500; margin-top:2px; color:#1C2333;">${formatSurface(brute)} m²</div></div>
+            <div class="sans"><div style="font-size:11px; color:#948B72;">Surface pondérée</div><div id="surf-tot-ponderee" style="font-family:'Fraunces',Georgia,serif; font-size:17px; font-weight:500; margin-top:2px; color:#B08D57;">${formatSurface(ponderee)} m²</div></div>
+          </div>
+          <div class="gen-note">Coefficient préremplit selon le niveau (RDC 100%, sous-sol 30%, cave 25%, étage/mezzanine 50% — 100% si entrée indépendante) — à ajuster ligne par ligne.</div>
+          ${legacyBlock}
+        `;
+      }
+      if (!hasSurfaces) {
+        return tabHeader() + `<div class="gen-note">Aucune surface renseignée.</div>${legacyBlock}`;
+      }
+      const rows = (p.surfaces || []).map(r => {
+        const coefVal = parseNum(r.coef);
+        return `<div class="id-field"><div class="id-label">${esc(r.niveau) || 'Niveau'} <span style="color:#B08D57;">(coef. ${formatSurface(coefVal===null?100:coefVal)}%)</span></div><div class="id-value">${formatSurface(parseNum(r.m2))} m²</div></div>`;
+      }).join('');
+      return tabHeader() + `
+        <div class="id-card">
+          ${rows}
+          <div class="id-field" style="border-top:1px solid #DCD2B8; border-bottom:none; margin-top:2px; padding-top:13px;"><div class="id-label" style="color:#1C2333; font-weight:600;">Surface brute totale</div><div class="id-value" style="font-size:18px;">${formatSurface(brute)} m²</div></div>
+          <div class="id-field" style="border-bottom:none;"><div class="id-label" style="color:#1C2333; font-weight:600;">Surface pondérée</div><div class="id-value" style="font-size:18px; color:#B08D57;">${formatSurface(ponderee)} m²</div></div>
+        </div>
+      `;
     }
     if (tab === 'echeances') {
       const historique = (p.taxe_fonciere_historique || []).slice().sort((a,b) => (b.annee||'').localeCompare(a.annee||''));
@@ -1809,8 +1895,9 @@ html, body {
           <div class="ov-item"><div class="ov-label">Valeur estimée</div><div class="ov-value">${formatMoney(p.valeur)}</div></div>
           <div class="ov-item"><div class="ov-label">Locataire</div><div class="ov-value">${esc(p.locataire_nom)||'—'}</div></div>
           <div class="ov-item"><div class="ov-label">Loyer annuel</div><div class="ov-value">${p.loyer ? formatMoney(p.loyer) + ' <span style="font-size:13px; font-weight:400; color:#948B72;">HT HC</span>' : '—'}</div></div>
-          <div class="ov-item"><div class="ov-label">Prix au m² (valeur estimée)</div><div class="ov-value">${(() => {
-            const surface = parseNum(p.bail_surface);
+          <div class="ov-item"><div class="ov-label">Prix au m² (surface pondérée)</div><div class="ov-value">${(() => {
+            const { ponderee, brute } = surfaceTotals(p);
+            const surface = ponderee || brute || parseNum(p.bail_surface);
             const val = parseNum(p.valeur);
             return (surface && val) ? formatMoney(Math.round(val/surface)) + '/m²' : '—';
           })()}</div></div>
@@ -2130,6 +2217,56 @@ const menuToggle = document.getElementById('menu-toggle');
         tabEditMode = !tabEditMode;
         render();
       });
+
+      if (openTab === 'surface') {
+        if (!p.surfaces) p.surfaces = [];
+        const refreshSurfaceTotals = () => {
+          const { brute, ponderee } = surfaceTotals(p);
+          const bruteEl = document.getElementById('surf-tot-brute');
+          const pondereeEl = document.getElementById('surf-tot-ponderee');
+          if (bruteEl) bruteEl.textContent = formatSurface(brute) + ' m²';
+          if (pondereeEl) pondereeEl.textContent = formatSurface(ponderee) + ' m²';
+        };
+        app.querySelectorAll('.surf-row').forEach(row => {
+          const i = parseInt(row.dataset.surf, 10);
+          const niveauInp = row.querySelector('.surf-niveau');
+          const m2Inp = row.querySelector('.surf-m2');
+          const coefInp = row.querySelector('.surf-coef');
+          niveauInp.addEventListener('input', () => {
+            p.surfaces[i].niveau = niveauInp.value;
+            if (coefInp.value === '') {
+              const suggestion = suggestCoefSurface(niveauInp.value);
+              if (suggestion !== null) { coefInp.value = suggestion; p.surfaces[i].coef = suggestion; }
+            }
+            scheduleSave();
+            refreshSurfaceTotals();
+          });
+          niveauInp.addEventListener('blur', () => save());
+          m2Inp.addEventListener('input', () => { p.surfaces[i].m2 = m2Inp.value; scheduleSave(); refreshSurfaceTotals(); });
+          m2Inp.addEventListener('blur', () => save());
+          coefInp.addEventListener('input', () => { p.surfaces[i].coef = coefInp.value; scheduleSave(); refreshSurfaceTotals(); });
+          coefInp.addEventListener('blur', () => save());
+        });
+        app.querySelectorAll('.surf-del').forEach(btn => {
+          btn.addEventListener('click', () => {
+            p.surfaces.splice(parseInt(btn.dataset.index, 10), 1);
+            scheduleSave();
+            render();
+          });
+        });
+        const addSurfBtn = document.getElementById('add-surf');
+        if (addSurfBtn) addSurfBtn.addEventListener('click', () => {
+          p.surfaces.push({ niveau:'', m2:'', coef:'' });
+          scheduleSave();
+          render();
+        });
+        const legacyBtn = document.getElementById('surf-legacy-btn');
+        if (legacyBtn) legacyBtn.addEventListener('click', () => {
+          p.surfaces = [{ niveau: 'RDC', m2: parseNum(p.bail_surface), coef: 100 }];
+          save();
+          render();
+        });
+      }
 
       if (openTab === 'documents') {
         const analyzeGlobalInput = document.getElementById('doc-analyze-input-global');
