@@ -1415,6 +1415,23 @@ html, body {
       return tabHeader() + `<div class="id-card">${cards}</div>`;
     }
     if (tab === 'documents') {
+      // Le bouton "Lire un document" (analyse automatique) est rendu ici,
+      // avant tabHeader() — donc avant le bouton "Modifier" — pour qu'il
+      // soit utilisable sans devoir d'abord passer en mode édition.
+      const lireDocBlock = `
+          <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+            <label class="sans" title="Analyser un document pour préremplir la fiche" style="font-size:13px; border:1px solid #DCD2B8; background:#FFFEFB; padding:8px 14px; cursor:${docAnalysisBusy?'not-allowed':'pointer'}; border-radius:8px; opacity:${docAnalysisBusy?'0.6':'1'};">
+              ${docAnalysisBusy ? 'Lecture…' : '🔍 Lire un document'}
+              <input type="file" accept="application/pdf,image/*" id="doc-analyze-input-global" style="display:none;" ${docAnalysisBusy?'disabled':''}>
+            </label>
+          </div>
+          <div class="gen-note" style="margin-top:0;">"Lire un document" analyse n'importe quel fichier de votre appareil pour préremplir la fiche — il n'est pas stocké.</div>
+          ${docUploadError ? `<div class="gen-note" style="color:#B0452E;">${esc(docUploadError)}</div>` : ''}
+          ${docAnalysisBusy ? `<div class="gen-note" style="color:#2E6B48; font-weight:600;">⏳ Lecture du document en cours, patientez… (jusqu'à une minute pour un document long, comme un échéancier de prêt)</div>` : ''}
+          ${docAnalysisError ? `<div class="gen-note" style="color:#B0452E;">${esc(docAnalysisError)}</div>` : ''}
+          ${docReviewCard(p)}
+          ${creditScheduleCard(p)}
+      `;
       if (tabEditMode) {
         const docsHtml = p.documents.map((d,i) => {
           const uploading = docUploadBusyIndex === i;
@@ -1435,21 +1452,10 @@ html, body {
             <button class="doc-del" title="Supprimer">✕</button>
           </div>
         `;}).join('');
-        return tabHeader() + `
-          <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
-            <label class="sans" title="Analyser un document pour préremplir la fiche" style="font-size:13px; border:1px solid #DCD2B8; background:#FFFEFB; padding:8px 14px; cursor:${docAnalysisBusy?'not-allowed':'pointer'}; border-radius:8px; opacity:${docAnalysisBusy?'0.6':'1'};">
-              ${docAnalysisBusy ? 'Lecture…' : '🔍 Lire un document'}
-              <input type="file" accept="application/pdf,image/*" id="doc-analyze-input-global" style="display:none;" ${docAnalysisBusy?'disabled':''}>
-            </label>
-          </div>
+        return lireDocBlock + tabHeader() + `
           <div id="docs-list">${docsHtml}</div>
           <button id="add-doc" style="margin-top:6px; font-family:-apple-system,sans-serif; font-size:12px; border:1px solid #DCD2B8; background:#FFFEFB; padding:6px 12px; cursor:pointer; border-radius:7px;">+ Ajouter un document</button>
-          <div class="gen-note">Uploadez un fichier par ligne — il est envoyé sur votre Google Drive et le lien est enregistré automatiquement. "Lire un document" analyse n'importe quel fichier de votre appareil pour préremplir la fiche — il n'est pas stocké.</div>
-          ${docUploadError ? `<div class="gen-note" style="color:#B0452E;">${esc(docUploadError)}</div>` : ''}
-          ${docAnalysisBusy ? `<div class="gen-note" style="color:#2E6B48; font-weight:600;">⏳ Lecture du document en cours, patientez… (jusqu'à une minute pour un document long, comme un échéancier de prêt)</div>` : ''}
-          ${docAnalysisError ? `<div class="gen-note" style="color:#B0452E;">${esc(docAnalysisError)}</div>` : ''}
-          ${docReviewCard(p)}
-          ${creditScheduleCard(p)}
+          <div class="gen-note">Uploadez un fichier par ligne — il est envoyé sur votre Google Drive et le lien est enregistré automatiquement.</div>
         `;
       }
       const cards = p.documents.map(d => {
@@ -1462,7 +1468,7 @@ html, body {
         }
         return `<div class="id-field"><div class="id-label">${esc(d.label)||'Document'}</div><div class="id-value">${linkHtml}</div></div>`;
       }).join('');
-      return tabHeader() + (p.documents.length ? `<div class="id-card">${cards}</div>` : `<div class="gen-note">Aucun document.</div>`);
+      return lireDocBlock + tabHeader() + (p.documents.length ? `<div class="id-card">${cards}</div>` : `<div class="gen-note">Aucun document.</div>`);
     }
     if (tab === 'generation') {
       const sci = scis.find(s => s.id === p.sci_id) || {};
