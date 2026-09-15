@@ -761,6 +761,24 @@ html, body {
     return m ? ('T' + m[2] + ' ' + m[1]) : (t || '');
   }
 
+  // Signal si les provisions de charges appelées au locataire (mensuelles,
+  // onglet Loyer) ne couvrent pas les charges de copropriété réellement
+  // payées (annuelles, onglet Assurance & copro) — dans ce cas l'appel de
+  // charges est trop bas et ne couvre pas la dépense réelle.
+  function chargesWarningHtml(p){
+    const appelees = parseNum(p.charges_mensuelles);
+    const reelles = parseNum(p.charges_copro);
+    if (!appelees || !reelles) return '';
+    const appeleesAn = appelees * 12;
+    if (appeleesAn >= reelles) return '';
+    return `
+      <div class="gen-note sans" style="margin-top:10px; padding:10px 12px; border:1px solid #E7B0A0; background:#FBDFDA; border-radius:8px; color:#8C3323; display:flex; gap:8px; align-items:flex-start;">
+        <span>⚠</span>
+        <span>Provisions de charges appelées : ${formatMoney(appeleesAn)}/an (${formatMoney(appelees)}/mois) — inférieures aux charges de copropriété réelles : ${formatMoney(reelles)}/an (onglet Assurance &amp; copro). Vous n'appelez pas assez pour couvrir la dépense réelle.</span>
+      </div>
+    `;
+  }
+
   // Coefficients de pondération par défaut selon le niveau (éditables ligne par
   // ligne) : RDC 100%, sous-sol 30%, cave 25%, étage/mezzanine 50% (100% si
   // entrée indépendante — à ajuster manuellement dans ce cas).
@@ -1440,7 +1458,7 @@ html, body {
           </div>
         ` : ''}
       `;
-      return top + tvaNote + renderLoyerRegistre(p) + revisionSection;
+      return top + tvaNote + chargesWarningHtml(p) + renderLoyerRegistre(p) + revisionSection;
     }
     if (tab === 'bail') {
       return fieldsPanel(p, [
@@ -1510,22 +1528,46 @@ html, body {
       `;
     }
     if (tab === 'echeances') {
+      // Un montant de taxe foncière n'a de sens que rattaché à une année précise
+      // (l'avis change chaque année) — chaque ligne ci-dessous est donc une année
+      // explicite, sur le même principe que le Registre des loyers.
       const historique = (p.taxe_fonciere_historique || []).slice().sort((a,b) => (b.annee||'').localeCompare(a.annee||''));
-      const histHtml = historique.length ? historique.map((h) => {
-        const realIndex = (p.taxe_fonciere_historique || []).indexOf(h);
+      if (tabEditMode) {
+        const rows = historique.length ? historique.map((h) => {
+          const realIndex = (p.taxe_fonciere_historique || []).indexOf(h);
+          const paid = !!h.date;
+          return `
+          <div class="row" style="background:${paid ? '#E4F0E7' : 'transparent'}; border-radius:8px; padding:8px; margin-bottom:4px;"><div class="k" style="display:flex; align-items:center; gap:6px;"><span style="width:7px; height:7px; border-radius:50%; background:${paid ? '#4C9A6A' : '#C9BFA8'}; display:inline-block; flex-shrink:0;"></span>${esc(h.annee)}</div><div class="v" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <input class="tf-hist-montant" data-index="${realIndex}" value="${esc(h.montant)}" placeholder="Montant" style="flex:1; min-width:90px;">
+            <input class="tf-hist-date" data-index="${realIndex}" type="date" value="${esc(h.date||'')}" title="Date de paiement (facultatif)" style="flex:1; min-width:130px;">
+            <button class="tf-hist-del" data-index="${realIndex}" title="Supprimer cette année" style="border:1px solid #DCD2B8; background:#FFFEFB; color:#B0452E; font-size:12px; padding:4px 8px; cursor:pointer; border-radius:6px;">✕</button>
+          </div></div>
+        `;}).join('') : `<div class="gen-note" style="margin-top:0;">Aucune année renseignée.</div>`;
+        return tabHeader() +
+          `<button id="tf-add-year-btn" class="sans" style="margin-bottom:12px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; font-size:12.5px; padding:8px 14px; cursor:pointer; border-radius:8px;">+ Ajouter une année</button>` +
+          rows;
+      }
+      if (!historique.length) {
+        return tabHeader() + `<div class="gen-note" style="margin-top:0;">Aucune année renseignée.</div>`;
+      }
+      const cards = historique.map(h => {
+        const paid = !!h.date;
+        const dotColor = paid ? '#4C9A6A' : '#C9711F';
+        const textColor = paid ? '#2E6B48' : '#C9711F';
+        const bg = paid ? '#E4F0E7' : '#FBEAD3';
+        const label = paid ? ('Payée le ' + new Date(h.date).toLocaleDateString('fr-FR')) : 'Non payée';
         return `
-        <div class="row"><div class="k">${esc(h.annee)}</div><div class="v" style="display:flex; align-items:center; gap:8px;">
-          <span style="flex:1;">${formatMoney(h.montant)} — payée le ${h.date ? new Date(h.date).toLocaleDateString('fr-FR') : '—'}</span>
-          <button class="tf-hist-del" data-index="${realIndex}" title="Supprimer cette ligne" style="border:1px solid #DCD2B8; background:#FFFEFB; color:#B0452E; font-size:12px; padding:4px 8px; cursor:pointer; border-radius:6px;">✕</button>
-        </div></div>
-      `;}).join('') : `<div class="gen-note">Aucun paiement enregistré.</div>`;
-      const montantBlock = tabEditMode
-        ? `<div class="row"><div class="k">Taxe foncière — montant</div><div class="v"><input data-f="taxe_fonciere_montant" value="${esc(p.taxe_fonciere_montant)}" placeholder="ex. 3 521 €"></div></div>`
-        : `<div class="id-card"><div class="id-field"><div class="id-label">Taxe foncière — montant</div><div class="id-value">${formatMoney(p.taxe_fonciere_montant)}</div></div></div>`;
-      return tabHeader() + montantBlock +
-        `<button id="tf-mark-paid-btn" class="sans" style="margin-top:10px; border:none; background:#2E6B48; color:#FBF7EE; font-size:13px; padding:9px 16px; cursor:pointer; border-radius:8px;">✓ Marquer payée</button>
-        <div class="gen-note" style="margin-top:14px; margin-bottom:0;">Historique des paiements :</div>
-        ${histHtml}`;
+        <div class="id-field">
+          <div class="id-label">${esc(h.annee)}</div>
+          <div class="id-value">
+            <div>${formatMoney(h.montant)}</div>
+            <div class="sans" style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:${textColor}; background:${bg}; padding:3px 9px 3px 7px; border-radius:20px; margin-top:5px;">
+              <span style="width:6px; height:6px; border-radius:50%; background:${dotColor}; display:inline-block; flex-shrink:0;"></span>${label}
+            </div>
+          </div>
+        </div>
+      `;}).join('');
+      return tabHeader() + `<div class="id-card">${cards}</div>`;
     }
     if (tab === 'assurance') {
       if (tabEditMode) {
@@ -1535,7 +1577,8 @@ html, body {
           echeanceRow('Renouvellement assurance', 'assurance_date', 'assurance_recurrence', p) +
           fieldRow({key:'syndic_nom', label:'Syndic'}, p) +
           fieldRow({key:'syndic_contact', label:'Contact syndic'}, p) +
-          fieldRow({key:'charges_copro', label:'Charges de copro (an)'}, p);
+          fieldRow({key:'charges_copro', label:'Charges de copro (an)'}, p) +
+          chargesWarningHtml(p);
       }
       const cards = [
         fieldCard({key:'assurance_nom', label:'Assureur'}, p),
@@ -1545,7 +1588,7 @@ html, body {
         fieldCard({key:'syndic_contact', label:'Contact syndic'}, p),
         fieldCard({key:'charges_copro', label:'Charges de copro (an)', format: formatMoney}, p)
       ].join('');
-      return tabHeader() + `<div class="id-card">${cards}</div>`;
+      return tabHeader() + `<div class="id-card">${cards}</div>` + chargesWarningHtml(p);
     }
     if (tab === 'documents') {
       // Le bouton "Lire un document" (analyse automatique) est rendu ici,
@@ -2355,7 +2398,22 @@ const menuToggle = document.getElementById('menu-toggle');
             const key = btn.dataset.field;
             const input = app.querySelector(`[data-review-field="${key}"]`);
             const val = input ? input.value.trim() : '';
-            if (val !== '') p[key] = val;
+            if (val !== '') {
+              if (key === 'taxe_fonciere_montant') {
+                // Un montant de taxe foncière n'a de sens que rattaché à une
+                // année précise — on demande l'année plutôt que de l'appliquer
+                // à un champ générique sans date (onglet Taxe foncière).
+                const y = window.prompt("Pour quelle année ce montant de taxe foncière s'applique-t-il ?", String(new Date().getFullYear()));
+                if (y && /^\d{4}$/.test(y)) {
+                  if (!p.taxe_fonciere_historique) p.taxe_fonciere_historique = [];
+                  const existing = p.taxe_fonciere_historique.find(h => String(h.annee) === y);
+                  if (existing) existing.montant = val;
+                  else p.taxe_fonciere_historique.push({ annee: y, montant: val, date: '' });
+                }
+              } else {
+                p[key] = val;
+              }
+            }
             save();
             // Confirmation visuelle brève avant que la ligne ne disparaisse
             // (sa valeur correspond désormais à celle trouvée) — pour être sûr
@@ -2415,17 +2473,22 @@ const menuToggle = document.getElementById('menu-toggle');
       }
 
       if (openTab === 'echeances') {
-        const markPaidBtn = document.getElementById('tf-mark-paid-btn');
-        if (markPaidBtn) markPaidBtn.addEventListener('click', () => {
-          const dateStr = window.prompt('Date de paiement (AAAA-MM-JJ) :', new Date().toISOString().slice(0,10));
-          if (!dateStr) return;
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert('Format de date invalide — utilisez AAAA-MM-JJ.'); return; }
-          const annee = dateStr.slice(0,4);
-          const montant = parseNum(p.taxe_fonciere_montant) || 0;
+        const addYearBtn = document.getElementById('tf-add-year-btn');
+        if (addYearBtn) addYearBtn.addEventListener('click', () => {
+          const y = window.prompt('Année de la taxe foncière :', String(new Date().getFullYear()));
+          if (!y || !/^\d{4}$/.test(y)) return;
           if (!p.taxe_fonciere_historique) p.taxe_fonciere_historique = [];
-          p.taxe_fonciere_historique.push({ annee, montant, date: dateStr });
+          if (p.taxe_fonciere_historique.some(h => String(h.annee) === y)) { alert('Cette année est déjà dans la liste.'); return; }
+          p.taxe_fonciere_historique.push({ annee: y, montant: '', date: '' });
           save();
           render();
+        });
+        app.querySelectorAll('.tf-hist-montant').forEach(inp => {
+          inp.addEventListener('input', () => { p.taxe_fonciere_historique[Number(inp.dataset.index)].montant = inp.value; scheduleSave(); });
+          inp.addEventListener('blur', () => save());
+        });
+        app.querySelectorAll('.tf-hist-date').forEach(inp => {
+          inp.addEventListener('change', () => { p.taxe_fonciere_historique[Number(inp.dataset.index)].date = inp.value; save(); });
         });
         app.querySelectorAll('.tf-hist-del').forEach(btn => {
           btn.addEventListener('click', () => {
