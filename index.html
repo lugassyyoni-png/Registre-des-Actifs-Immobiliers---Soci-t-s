@@ -641,6 +641,22 @@ html, body {
         locataire: { nom: p.locataire_nom || '', email: p.locataire_email || '', contact: p.locataire_contact || '' },
         taxeFonciere: { annee: genYear, montant: montantTaxe }
       };
+    } else if (genDocType === 'regularisation_charges') {
+      const provisionsAn = (parseNum(p.charges_mensuelles) || 0) * 12;
+      const chargesReelles = parseNum(p.charges_copro) || 0;
+      if (!chargesReelles) { if (draftWin) draftWin.close(); genMessage = 'Aucun montant de charges réelles connu pour ce bien.'; render(); return; }
+      const solde = chargesReelles - provisionsAn;
+      periodeForHistory = String(genYear);
+      payload = {
+              key: API_KEY, id_token: (window.GOOGLE_ID_TOKEN || ''),
+        action: 'generateDocument',
+        docType: 'regularisation_charges',
+        periode: periodeForHistory,
+        bailleur: { nom: sci.nom || '', adresse: sci.adresse_siege || '', emailEnvoi: sci.email_envoi || '', emailCc: sci.email_cc || '' },
+        bien: { adresse: p.adresse || '', codePostal: p.code_postal || '', ville: p.ville || '' },
+        locataire: { nom: p.locataire_nom || '', email: p.locataire_email || '', contact: p.locataire_contact || '' },
+        regularisationCharges: { annee: genYear, provisions: provisionsAn, reelles: chargesReelles, solde: solde }
+      };
     } else {
       const effectivePeriodType = genDocType === 'rappel' ? 'mois' : genPeriodType;
       const monthOrQuarter = effectivePeriodType === 'trimestre' ? genQuarter : genMonth;
@@ -1664,6 +1680,7 @@ html, body {
           <option value="rappel" ${genDocType==='rappel'?'selected':''}>Rappel de loyer</option>
           <option value="revision" ${genDocType==='revision'?'selected':''}>Révision de loyer</option>
           <option value="taxe_fonciere" ${genDocType==='taxe_fonciere'?'selected':''}>Taxe foncière</option>
+          <option value="regularisation_charges" ${genDocType==='regularisation_charges'?'selected':''}>Régularisation de charges</option>
         </select>
       `;
       const historyHtml = renderDocHistory(p);
@@ -1710,6 +1727,34 @@ html, body {
             <div class="id-field"><div class="id-label">Montant de la taxe foncière</div><div class="id-value">${formatMoney(resolvedMontant)}${histEntry ? ' <span style="font-size:11px; color:#948B72;">(historique)</span>' : ' <span style="font-size:11px; color:#948B72;">(champ actuel)</span>'}</div></div>
           </div>
           ${missingMontant ? `<div class="gen-note" style="color:#B0452E;">Aucun montant de taxe foncière connu pour cette année (onglet Taxe foncière) — impossible de générer le document.</div>` : ''}
+          ${missingEmail ? `<div class="gen-note" style="color:#B0452E;">Aucun email locataire renseigné (onglet Locataire) — impossible de générer le brouillon.</div>` : ''}
+          ${!sci.email_envoi ? `<div class="gen-note">Aucun email d'envoi personnalisé pour cette SCI — le brouillon partira de votre adresse Gmail principale.</div>` : ''}
+          <button id="gen-submit-btn" class="sans" ${disabled?'disabled':''} style="margin-top:6px; border:none; background:#1C2333; color:#FBF7EE; font-size:13px; padding:10px 18px; cursor:${disabled?'not-allowed':'pointer'}; border-radius:8px; opacity:${disabled?'0.5':'1'};">${genBusy ? 'Génération en cours…' : 'Générer le document et le brouillon Gmail'}</button>
+          ${genMessage ? `<div class="gen-note">${esc(genMessage)}</div>` : ''}
+          ${genDraftUrl ? `<div class="gen-note"><a href="${esc(genDraftUrl)}" target="_blank" style="color:#1C2333; font-weight:600;">Ouvrir le brouillon Gmail →</a></div>` : ''}
+          ${historyHtml}
+        `;
+      }
+
+      if (genDocType === 'regularisation_charges') {
+        const provisionsAn = (parseNum(p.charges_mensuelles) || 0) * 12;
+        const chargesReelles = parseNum(p.charges_copro) || 0;
+        const solde = chargesReelles - provisionsAn;
+        const missingReelles = !chargesReelles;
+        const yearsOptions = [currentYear-1, currentYear, currentYear+1].map(y=>`<option value="${y}" ${String(y)===String(genYear)?'selected':''}>${y}</option>`).join('');
+        const disabled = missingEmail || missingReelles;
+        return `
+          <div class="gen-row">
+            ${typeSelectHtml}
+            <select id="gen-year">${yearsOptions}</select>
+          </div>
+          <div class="id-card" style="margin-top:10px;">
+            <div class="id-field"><div class="id-label">Année</div><div class="id-value">${esc(genYear)}</div></div>
+            <div class="id-field"><div class="id-label">Provisions sur charges encaissées</div><div class="id-value">${formatMoney(provisionsAn)} <span style="font-size:11px; color:#948B72;">(${formatMoney(parseNum(p.charges_mensuelles)||0)}/mois × 12)</span></div></div>
+            <div class="id-field"><div class="id-label">Charges réelles</div><div class="id-value">${chargesReelles ? formatMoney(chargesReelles) : '—'} <span style="font-size:11px; color:#948B72;">(onglet Assurance &amp; copro)</span></div></div>
+            <div class="id-field"><div class="id-label">${solde >= 0 ? 'Solde à réclamer au locataire' : 'Solde en faveur du locataire'}</div><div class="id-value"><span style="color:${solde>=0?'#D2543B':'#2E6B48'};">${formatMoney(Math.abs(solde))}</span></div></div>
+          </div>
+          ${missingReelles ? `<div class="gen-note" style="color:#B0452E;">Aucun montant de charges réelles connu (onglet Assurance &amp; copro, champ "Charges de copro (an)") — impossible de générer le document.</div>` : ''}
           ${missingEmail ? `<div class="gen-note" style="color:#B0452E;">Aucun email locataire renseigné (onglet Locataire) — impossible de générer le brouillon.</div>` : ''}
           ${!sci.email_envoi ? `<div class="gen-note">Aucun email d'envoi personnalisé pour cette SCI — le brouillon partira de votre adresse Gmail principale.</div>` : ''}
           <button id="gen-submit-btn" class="sans" ${disabled?'disabled':''} style="margin-top:6px; border:none; background:#1C2333; color:#FBF7EE; font-size:13px; padding:10px 18px; cursor:${disabled?'not-allowed':'pointer'}; border-radius:8px; opacity:${disabled?'0.5':'1'};">${genBusy ? 'Génération en cours…' : 'Générer le document et le brouillon Gmail'}</button>
