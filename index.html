@@ -1056,6 +1056,8 @@ html, body {
     const monthNames = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
     propList.forEach(p => {
       const reg = p.loyer_registre || {};
+      const defaultMontant = p.loyer ? defaultMonthlyLoyer(p) : null;
+      const defaultCharges = p.charges_mensuelles ? (parseNum(p.charges_mensuelles)||0) : null;
       Object.keys(reg).forEach(y => {
         Object.keys(reg[y]).forEach(m => {
           const entry = reg[y][m];
@@ -1063,7 +1065,8 @@ html, body {
           if (status === 'impaye') {
             const dueDate = new Date(parseInt(y,10), parseInt(m,10)-1, 1);
             const daysLate = Math.floor((now - dueDate) / 86400000);
-            alerts.push({ prop: p, daysLate, text: `Loyer impayé — ${esc(propLabel(p))} : ${monthNames[parseInt(m,10)-1]} ${y}, en retard de ${daysLate} j` });
+            const amount = loyerMonthAmounts(p, entry, defaultMontant, defaultCharges).totalTTC;
+            alerts.push({ prop: p, daysLate, amount, text: `Loyer impayé — ${esc(propLabel(p))} : ${monthNames[parseInt(m,10)-1]} ${y}, en retard de ${daysLate} j` });
           }
         });
       });
@@ -1223,15 +1226,15 @@ html, body {
     let loyerRegistreHealed = false;
     const yearBlocks = years.map(y => {
       const monthsObj = p.loyer_registre[y];
+      const monthKeys = Object.keys(monthsObj).sort();
       const nbVerse = Object.values(monthsObj).filter(m=>m.statut==='verse').length;
       const expanded = expandedLoyerYear === y;
       let monthsHtml = '';
       if (expanded) {
         const defaultMontant = p.loyer ? defaultMonthlyLoyer(p) : null;
         const defaultCharges = p.charges_mensuelles ? (parseNum(p.charges_mensuelles)||0) : null;
-        monthsHtml = monthNames.map((name,i) => {
-          const mm = String(i+1).padStart(2,'0');
-          if (!monthsObj[mm]) monthsObj[mm] = {statut:'impaye', date:'', montant:'', montant_paye:'', charges:''};
+        monthsHtml = monthKeys.map(mm => {
+          const name = monthNames[parseInt(mm,10)-1];
           const entry = monthsObj[mm];
           if (entry.charges === undefined) { entry.charges = ''; loyerRegistreHealed = true; }
           if ((entry.statut === 'verse' || entry.statut === 'partiel') && !entry.montant && defaultMontant) {
@@ -1261,14 +1264,15 @@ html, body {
               <input type="text" class="lm-charges" value="${esc(entry.charges)}" placeholder="${defaultCharges?formatMoney(defaultCharges):'Charges'}">
               <span class="lm-total">TVA ${formatMoney(amounts.tva)} · TTC ${formatMoney(amounts.totalTTC)}</span>
               <input type="text" class="lm-montant-paye" value="${esc(entry.montant_paye)}" placeholder="Montant versé (total)" style="${entry.statut!=='partiel'?'display:none;':''}">
+              <button class="lm-del" data-year="${y}" data-month="${mm}" title="Supprimer ce mois">✕</button>
             </div>
           `;
-        }).join('');
+        }).join('') || "<div class=\"gen-note\" style=\"margin-top:0;\">Aucun mois suivi cette année-là.</div>";
       }
       return `
         <div class="loyer-year-head ${expanded?'active':''}" data-year-toggle="${y}">
           <span>${y}</span>
-          <span class="loyer-year-count">${nbVerse}/12 versés</span>
+          <span class="loyer-year-count">${nbVerse}/${monthKeys.length} versés</span>
         </div>
         ${expanded ? `<div class="loyer-months">${monthsHtml}</div>` : ''}
       `;
@@ -1815,7 +1819,7 @@ html, body {
     const totalValeur = properties.reduce((s,p) => s + (parseNum(p.valeur) || 0), 0);
     const totalLoyer = properties.reduce((s,p) => s + (parseNum(p.loyer) || 0), 0);
     const loyerAlerts = getLoyerAlerts(properties);
-    const nbLate = new Set(loyerAlerts.map(a => a.prop.id)).size || properties.filter(p => p.statut_paiement === 'late').length;
+    const totalImpaye = loyerAlerts.reduce((s,a) => s + (a.amount || 0), 0);
     const alerts = getAlerts(properties);
 
     const hero = `
@@ -1834,7 +1838,7 @@ html, body {
     const metrics = `
       <div class="metric-grid">
         <div class="metric-card"><div class="m-label">Biens suivis</div><div class="m-value">${properties.length}</div></div>
-        <div class="metric-card ${nbLate?'warn':''}"><div class="m-label">Impayés</div><div class="m-value">${nbLate}</div></div>
+        <div class="metric-card ${totalImpaye?'warn':''}"><div class="m-label">Impayés</div><div class="m-value">${totalImpaye ? formatMoney(totalImpaye) : '0 €'}</div></div>
       </div>
     `;
 
@@ -2593,6 +2597,13 @@ const menuToggle = document.getElementById('menu-toggle');
           chargesInp.addEventListener('blur', () => save());
           montantPayeInp.addEventListener('input', () => { p.loyer_registre[y][m].montant_paye = montantPayeInp.value; scheduleSave(); });
           montantPayeInp.addEventListener('blur', () => save());
+          const delBtn = row.querySelector('.lm-del');
+          if (delBtn) delBtn.addEventListener('click', () => {
+            if (!window.confirm(`Supprimer ${MONTH_NAMES_FULL[parseInt(m,10)-1]} ${y} du registre des loyers ? Cette action est irréversible.`)) return;
+            delete p.loyer_registre[y][m];
+            save();
+            render();
+          });
         });
         const addYearBtn = document.getElementById('add-loyer-year');
         if (addYearBtn) addYearBtn.addEventListener('click', () => {
@@ -2601,7 +2612,16 @@ const menuToggle = document.getElementById('menu-toggle');
           if (!p.loyer_registre) p.loyer_registre = {};
           if (!p.loyer_registre[y]) {
             p.loyer_registre[y] = {};
-            for (let i=1;i<=12;i++) { p.loyer_registre[y][String(i).padStart(2,'0')] = {statut:'impaye', date:'', montant:'', montant_paye:'', charges:''}; }
+            // Si le bien a été acquis en cours de cette année-là, on ne suit
+            // le loyer qu'à partir du mois d'acquisition (pas d'avant-achat).
+            let startMonth = 1;
+            if (p.date_acquisition) {
+              const acq = new Date(p.date_acquisition);
+              if (!isNaN(acq.getTime()) && acq.getFullYear() === parseInt(y,10)) {
+                startMonth = acq.getMonth() + 1;
+              }
+            }
+            for (let i=startMonth;i<=12;i++) { p.loyer_registre[y][String(i).padStart(2,'0')] = {statut:'impaye', date:'', montant:'', montant_paye:'', charges:''}; }
           }
           expandedLoyerYear = y;
           save();
