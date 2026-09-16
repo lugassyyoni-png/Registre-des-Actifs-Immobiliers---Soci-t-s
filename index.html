@@ -1310,6 +1310,7 @@ html, body {
       ['bail_depot_garantie','Dépôt de garantie'], ['bail_droit_entree',"Droit d'entrée"],
       ['bail_destination','Destination'],
       ['bail_surface','Surface'], ['bail_tva','TVA'],
+      ['numero_lot','N° de lot'], ['tantiemes','Tantièmes'],
       ['revision_indice_type', "Type d'indice (révision)"], ['revision_indice_valeur','Indice de base — valeur'],
       ['revision_indice_trimestre','Indice de base — trimestre'], ['revision_date_prochaine','Prochaine révision'],
       ['credit_banque','Banque'], ['credit_numero','Numéro de prêt'], ['credit_montant','Montant emprunté'],
@@ -1506,11 +1507,13 @@ html, body {
       ` : '';
       if (tabEditMode) {
         const rowsHtml = (p.surfaces || []).map((r,i) => `
-          <div class="surf-row" data-surf="${i}" style="display:flex; gap:8px; margin-bottom:7px; align-items:center;">
+          <div class="surf-row" data-surf="${i}" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:7px; align-items:center;">
             <input type="text" class="surf-niveau sans" list="niveau-list-surface" placeholder="ex. RDC" value="${esc(r.niveau)}" style="flex:1 1 150px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
             <input type="text" class="surf-m2 sans" inputmode="decimal" placeholder="m²" value="${esc(r.m2)}" style="flex:0 0 90px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
             <input type="text" class="surf-coef sans" inputmode="decimal" placeholder="100" value="${(r.coef===undefined||r.coef===null)?'':esc(r.coef)}" style="flex:0 0 70px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
             <span class="sans" style="font-size:11px; color:#948B72; flex:0 0 12px;">%</span>
+            <input type="text" class="surf-lot sans" placeholder="N° lot" value="${esc(r.lot)}" style="flex:0 0 80px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
+            <input type="text" class="surf-tantiemes sans" placeholder="Tantièmes (ex. 125/10000e)" value="${esc(r.tantiemes)}" style="flex:0 0 150px; font-size:13px; padding:7px 9px; border:1px solid #DCD2B8; background:#FFFEFB; color:#1C2333; border-radius:7px;">
             <button class="surf-del sans" data-index="${i}" title="Supprimer ce niveau" style="border:1px solid #DCD2B8; background:#FFFEFB; color:#B0452E; font-size:12px; cursor:pointer; padding:6px 9px; border-radius:7px; flex:0 0 auto;">✕</button>
           </div>
         `).join('');
@@ -1519,8 +1522,8 @@ html, body {
             <option value="RDC"><option value="Sous-sol"><option value="Étage"><option value="1er étage">
             <option value="Mezzanine"><option value="Cave"><option value="Réserve"><option value="Terrasse">
           </datalist>
-          <div class="sans" style="display:flex; gap:8px; margin-bottom:6px; font-size:10.5px; color:#948B72; text-transform:uppercase; letter-spacing:.3px;">
-            <div style="flex:1 1 150px;">Niveau</div><div style="flex:0 0 90px;">m²</div><div style="flex:0 0 70px;">Coef. %</div><div style="flex:0 0 12px;"></div><div style="flex:0 0 35px;"></div>
+          <div class="sans" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; font-size:10.5px; color:#948B72; text-transform:uppercase; letter-spacing:.3px;">
+            <div style="flex:1 1 150px;">Niveau</div><div style="flex:0 0 90px;">m²</div><div style="flex:0 0 70px;">Coef. %</div><div style="flex:0 0 12px;"></div><div style="flex:0 0 80px;">N° lot</div><div style="flex:0 0 150px;">Tantièmes</div><div style="flex:0 0 35px;"></div>
           </div>
           <div id="surf-rows">${rowsHtml}</div>
           <button id="add-surf" class="sans" style="margin-top:4px; font-size:12px; border:1px dashed #C9BFA8; background:none; color:#948B72; cursor:pointer; padding:8px 12px; border-radius:8px; width:100%; text-align:left;">+ Ajouter un niveau</button>
@@ -1537,7 +1540,8 @@ html, body {
       }
       const rows = (p.surfaces || []).map(r => {
         const coefVal = parseNum(r.coef);
-        return `<div class="id-field"><div class="id-label">${esc(r.niveau) || 'Niveau'} <span style="color:#B08D57;">(coef. ${formatSurface(coefVal===null?100:coefVal)}%)</span></div><div class="id-value">${formatSurface(parseNum(r.m2))} m²</div></div>`;
+        const lotTantiemes = [r.lot ? `Lot ${esc(r.lot)}` : '', r.tantiemes ? `${esc(r.tantiemes)}` : ''].filter(Boolean).join(' · ');
+        return `<div class="id-field"><div class="id-label">${esc(r.niveau) || 'Niveau'} <span style="color:#B08D57;">(coef. ${formatSurface(coefVal===null?100:coefVal)}%)</span></div><div class="id-value">${formatSurface(parseNum(r.m2))} m²${lotTantiemes ? `<div style="font-size:11px; color:#948B72; font-weight:400; margin-top:2px;">${lotTantiemes}</div>` : ''}</div></div>`;
       }).join('');
       return tabHeader() + `
         <div class="id-card">
@@ -2384,6 +2388,8 @@ const menuToggle = document.getElementById('menu-toggle');
           const niveauInp = row.querySelector('.surf-niveau');
           const m2Inp = row.querySelector('.surf-m2');
           const coefInp = row.querySelector('.surf-coef');
+          const lotInp = row.querySelector('.surf-lot');
+          const tantiemesInp = row.querySelector('.surf-tantiemes');
           niveauInp.addEventListener('input', () => {
             p.surfaces[i].niveau = niveauInp.value;
             if (coefInp.value === '') {
@@ -2398,6 +2404,10 @@ const menuToggle = document.getElementById('menu-toggle');
           m2Inp.addEventListener('blur', () => save());
           coefInp.addEventListener('input', () => { p.surfaces[i].coef = coefInp.value; scheduleSave(); refreshSurfaceTotals(); });
           coefInp.addEventListener('blur', () => save());
+          lotInp.addEventListener('input', () => { p.surfaces[i].lot = lotInp.value; scheduleSave(); });
+          lotInp.addEventListener('blur', () => save());
+          tantiemesInp.addEventListener('input', () => { p.surfaces[i].tantiemes = tantiemesInp.value; scheduleSave(); });
+          tantiemesInp.addEventListener('blur', () => save());
         });
         app.querySelectorAll('.surf-del').forEach(btn => {
           btn.addEventListener('click', () => {
@@ -2408,13 +2418,13 @@ const menuToggle = document.getElementById('menu-toggle');
         });
         const addSurfBtn = document.getElementById('add-surf');
         if (addSurfBtn) addSurfBtn.addEventListener('click', () => {
-          p.surfaces.push({ niveau:'', m2:'', coef:'' });
+          p.surfaces.push({ niveau:'', m2:'', coef:'', lot:'', tantiemes:'' });
           scheduleSave();
           render();
         });
         const legacyBtn = document.getElementById('surf-legacy-btn');
         if (legacyBtn) legacyBtn.addEventListener('click', () => {
-          p.surfaces = [{ niveau: 'RDC', m2: parseNum(p.bail_surface), coef: 100 }];
+          p.surfaces = [{ niveau: 'RDC', m2: parseNum(p.bail_surface), coef: 100, lot: '', tantiemes: '' }];
           save();
           render();
         });
@@ -2468,6 +2478,15 @@ const menuToggle = document.getElementById('menu-toggle');
                   if (existing) existing.montant = val;
                   else p.taxe_fonciere_historique.push({ annee: y, montant: val, date: '' });
                 }
+              } else if (key === 'numero_lot' || key === 'tantiemes') {
+                // Pas de champ à plat pour ces infos-là : elles vivent par
+                // niveau dans l'onglet Surface (un bien peut avoir plusieurs
+                // lots). On applique au premier niveau (créé si besoin) —
+                // à répartir manuellement s'il y en a plusieurs.
+                if (!p.surfaces) p.surfaces = [];
+                if (!p.surfaces.length) p.surfaces.push({ niveau:'', m2:'', coef:'', lot:'', tantiemes:'' });
+                if (key === 'numero_lot') p.surfaces[0].lot = val;
+                else p.surfaces[0].tantiemes = val;
               } else {
                 p[key] = val;
               }
