@@ -2000,6 +2000,15 @@ html, body {
             return `<span style="color:${color};">${pct.toLocaleString('fr-FR',{maximumFractionDigits:1})} %</span>`;
           })()}</div></div>
           <div class="ov-item"><div class="ov-label">Statut de paiement</div><div class="ov-value badge"><span class="dot ${statusDot(computePaymentStatus(p).key)}"></span>${computePaymentStatus(p).label}</div></div>
+          <div class="ov-item"><div class="ov-label">Cash-flow mensuel</div><div class="ov-value">${(() => {
+            const loyerMensuel = parseNum(p.bail_loyer_mensuel) || (parseNum(p.loyer) ? parseNum(p.loyer)/12 : null);
+            const mensualite = parseNum(p.credit_mensualite);
+            if (loyerMensuel === null || mensualite === null) return '—';
+            const cf = loyerMensuel - mensualite;
+            const color = cf >= 0 ? '#2E6B48' : '#D2543B';
+            const sign = cf > 0 ? '+' : '';
+            return `<span style="color:${color};">${sign}${Math.round(cf).toLocaleString('fr-FR')} €</span>`;
+          })()}</div></div>
         </div>
 
         <div class="tabs">${tabsHtml}</div>
