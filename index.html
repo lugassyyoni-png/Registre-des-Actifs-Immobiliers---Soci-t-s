@@ -700,6 +700,8 @@ html, body {
         }
         if (!p.documents_generes) p.documents_generes = [];
         p.documents_generes.push({ date: new Date().toISOString(), docType: genDocType, periode: periodeForHistory });
+        // On ne garde que les 4 derniers documents générés
+        if (p.documents_generes.length > 4) p.documents_generes = p.documents_generes.slice(-4);
         if (data.docUrl) {
           if (!p.documents) p.documents = [];
           p.documents.push({ label: data.docName || (genDocType + ' - ' + periodeForHistory), lien: data.docUrl });
@@ -1288,11 +1290,11 @@ html, body {
   }
 
   function docTypeLabel(t){
-    return { avis: "Avis d'échéance", quittance: 'Quittance', rappel: 'Rappel de loyer', revision: 'Révision de loyer', taxe_fonciere: 'Taxe foncière' }[t] || t;
+    return { avis: "Avis d'échéance", quittance: 'Quittance', rappel: 'Rappel de loyer', revision: 'Révision de loyer', taxe_fonciere: 'Refacturation taxe foncière' }[t] || t;
   }
 
   function renderDocHistory(p){
-    const hist = (p.documents_generes || []).slice().reverse().slice(0, 10);
+    const hist = (p.documents_generes || []).slice().reverse().slice(0, 4);
     if (!hist.length) return '';
     const rows = hist.map(h => `<div class="id-field"><div class="id-label">${new Date(h.date).toLocaleDateString('fr-FR')} — ${esc(docTypeLabel(h.docType))}</div><div class="id-value" style="font-size:12px; font-weight:400;">${esc(h.periode || '')}</div></div>`).join('');
     return `<div class="gen-note" style="margin-top:16px; margin-bottom:4px;">Documents générés récemment :</div><div class="id-card">${rows}</div>`;
@@ -1687,7 +1689,7 @@ html, body {
           <option value="quittance" ${genDocType==='quittance'?'selected':''}>Quittance</option>
           <option value="rappel" ${genDocType==='rappel'?'selected':''}>Rappel de loyer</option>
           <option value="revision" ${genDocType==='revision'?'selected':''}>Révision de loyer</option>
-          <option value="taxe_fonciere" ${genDocType==='taxe_fonciere'?'selected':''}>Taxe foncière</option>
+          <option value="taxe_fonciere" ${genDocType==='taxe_fonciere'?'selected':''}>Refacturation taxe foncière</option>
           <option value="regularisation_charges" ${genDocType==='regularisation_charges'?'selected':''}>Régularisation de charges</option>
         </select>
       `;
