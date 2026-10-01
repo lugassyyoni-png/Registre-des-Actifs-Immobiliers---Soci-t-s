@@ -1071,7 +1071,7 @@ html, body {
             const dueDate = new Date(parseInt(y,10), parseInt(m,10)-1, 1);
             const daysLate = Math.floor((now - dueDate) / 86400000);
             const amount = loyerMonthAmounts(p, entry, defaultMontant, defaultCharges).totalTTC;
-            alerts.push({ prop: p, daysLate, amount, tab: 'loyer', year: y, text: `Loyer impayé — ${esc(propLabel(p))} : ${monthNames[parseInt(m,10)-1]} ${y}, en retard de ${daysLate} j` });
+            alerts.push({ prop: p, daysLate, amount, tab: 'generation', year: y, gen: { doc: 'rappel', periodType: 'mois', year: y, month: m }, text: `Loyer impayé — ${esc(propLabel(p))} : ${monthNames[parseInt(m,10)-1]} ${y}, en retard de ${daysLate} j` });
           }
         });
       });
@@ -1109,7 +1109,8 @@ html, body {
       if (amounts.allVerse) return; // déjà réglé
 
       const label = periodLabel(periodType, periodStart.getFullYear(), monthOrQuarter);
-      alerts.push({ prop: p, days: daysUntil, tab: 'loyer', year: String(periodStart.getFullYear()), text: `Règlement du loyer à venir — ${esc(propLabel(p))} : ${label}` });
+      alerts.push({ prop: p, days: daysUntil, tab: 'generation', year: String(periodStart.getFullYear()),
+        gen: { doc: 'avis', periodType, year: periodStart.getFullYear(), month: String(periodStart.getMonth()+1).padStart(2,'0'), quarter: monthToQuarter(periodStart.getMonth()+1) }, text: `Règlement du loyer à venir — ${esc(propLabel(p))} : ${label}` });
     });
     return alerts;
   }
@@ -1117,7 +1118,7 @@ html, body {
   // Attributs de navigation d'une alerte : clic -> fiche du bien, onglet concerné
   function alertAttrs(a){
     if (!a || !a.prop) return '';
-    return ` data-alert-prop="${esc(a.prop.id)}" data-alert-tab="${esc(a.tab||'')}" data-alert-year="${esc(a.year||'')}" title="Ouvrir l'onglet concerné"`;
+    return ` data-alert-prop="${esc(a.prop.id)}" data-alert-tab="${esc(a.tab||'')}" data-alert-year="${esc(a.year||'')}" data-alert-gen="${a.gen ? esc(JSON.stringify(a.gen)) : ''}" title="Ouvrir l'onglet concerné"`;
   }
 
   // Alertes crédit : prélèvement à venir (J-7) et échéances passées non pointées
@@ -2280,10 +2281,22 @@ const menuToggle = document.getElementById('menu-toggle');
         openTab = el.dataset.alertTab || null; tabEditMode = false;
         expandedLoyerYear = (openTab === 'loyer' && el.dataset.alertYear) ? el.dataset.alertYear : null;
         expandedCreditYear = (openTab === 'financement' && el.dataset.alertYear) ? el.dataset.alertYear : null;
+        genMessage = ''; genDraftUrl = null;
+        if (openTab === 'generation' && el.dataset.alertGen) {
+          try {
+            const g = JSON.parse(el.dataset.alertGen);
+            genDocType = g.doc || 'avis';
+            genPeriodType = g.periodType || null;
+            genYear = g.year != null ? parseInt(g.year, 10) : null;
+            genMonth = g.month || null;
+            genQuarter = g.quarter != null ? g.quarter : (g.month ? monthToQuarter(g.month) : null);
+          } catch(e) { genPeriodType = null; genYear = null; genMonth = null; genQuarter = null; }
+        }
         docAnalysisResult = null; docAnalysisError = ''; docUploadError = ''; inseeLookupResult = null; inseeLookupError = '';
         mobileSidebarOpen = false;
         render();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const target = app.querySelector('.tab-btn.active') || app.querySelector('h2');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
 
