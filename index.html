@@ -198,6 +198,9 @@ html, body {
   padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; background: #FDF0E2; color: #7A4A17; border: 1px solid #F0D8B0;
 }
 #sci-app .alert-row.urgent { background: #FCE8E5; color: #8A2E1F; border-color: #F0B8AD; }
+#sci-app .alert-row[data-alert-prop] { cursor: pointer; transition: filter .12s; }
+#sci-app .alert-row[data-alert-prop]:hover { filter: brightness(0.96); }
+#sci-app .alert-row[data-alert-prop]::after { content: '›'; margin-left: auto; font-size: 15px; opacity: .55; }
 
 #sci-app .facade { width: 100%; height: auto; max-height: 460px; object-fit: contain; border-radius: 10px; margin-bottom: 14px; display: block; background: #ECE1C4; }
 #sci-app .facade-empty { width: 100%; height: 70px; border: 1px dashed #DCD2B8; border-radius: 10px; margin-bottom: 14px; display: flex; align-items: center; justify-content: center; font-family: -apple-system, sans-serif; font-size: 12px; color: #948B72; }
@@ -835,15 +838,15 @@ html, body {
 
   function getAlerts(propList){
     const fields = [
-      {f: 'revision_date_prochaine', label: 'Révision de loyer'},
-      {f: 'assurance_date', label: 'Renouvellement assurance'}
+      {f: 'revision_date_prochaine', label: 'Révision de loyer', tab: 'loyer'},
+      {f: 'assurance_date', label: 'Renouvellement assurance', tab: 'assurance'}
     ];
     const alerts = [];
     propList.forEach(p => {
       fields.forEach(fl => {
         const d = daysUntil(p[fl.f]);
         if (d !== null && d <= 90) {
-          alerts.push({ prop: p, label: fl.label, days: d, date: p[fl.f] });
+          alerts.push({ prop: p, label: fl.label, days: d, date: p[fl.f], tab: fl.tab });
         }
       });
     });
@@ -1068,7 +1071,7 @@ html, body {
             const dueDate = new Date(parseInt(y,10), parseInt(m,10)-1, 1);
             const daysLate = Math.floor((now - dueDate) / 86400000);
             const amount = loyerMonthAmounts(p, entry, defaultMontant, defaultCharges).totalTTC;
-            alerts.push({ prop: p, daysLate, amount, text: `Loyer impayé — ${esc(propLabel(p))} : ${monthNames[parseInt(m,10)-1]} ${y}, en retard de ${daysLate} j` });
+            alerts.push({ prop: p, daysLate, amount, tab: 'loyer', year: y, text: `Loyer impayé — ${esc(propLabel(p))} : ${monthNames[parseInt(m,10)-1]} ${y}, en retard de ${daysLate} j` });
           }
         });
       });
@@ -1106,7 +1109,60 @@ html, body {
       if (amounts.allVerse) return; // déjà réglé
 
       const label = periodLabel(periodType, periodStart.getFullYear(), monthOrQuarter);
-      alerts.push({ prop: p, days: daysUntil, text: `Règlement du loyer à venir — ${esc(propLabel(p))} : ${label}` });
+      alerts.push({ prop: p, days: daysUntil, tab: 'loyer', year: String(periodStart.getFullYear()), text: `Règlement du loyer à venir — ${esc(propLabel(p))} : ${label}` });
+    });
+    return alerts;
+  }
+
+  // Attributs de navigation d'une alerte : clic -> fiche du bien, onglet concerné
+  function alertAttrs(a){
+    if (!a || !a.prop) return '';
+    return ` data-alert-prop="${esc(a.prop.id)}" data-alert-tab="${esc(a.tab||'')}" data-alert-year="${esc(a.year||'')}" title="Ouvrir l'onglet concerné"`;
+  }
+
+  // Alertes crédit : prélèvement à venir (J-7) et échéances passées non pointées
+  function getCreditAlerts(propList){
+    const alerts = [];
+    const now = new Date(); now.setHours(0,0,0,0);
+    const MN = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    propList.forEach(p => {
+      const depart = p.credit_date_depart ? new Date(p.credit_date_depart) : null;
+      const reg = p.credit_registre || {};
+      const hasReg = Object.keys(reg).length > 0;
+      if ((!depart || isNaN(depart.getTime())) && !hasReg) return;
+      const day = (depart && !isNaN(depart.getTime())) ? depart.getDate() : 1;
+      const dueOf = (y, m) => { const last = new Date(y, m, 0).getDate(); return new Date(y, m-1, Math.min(day, last)); };
+      const duree = parseInt(p.credit_duree_mois, 10);
+      const fin = (depart && !isNaN(depart.getTime()) && duree) ? new Date(depart.getFullYear(), depart.getMonth() + duree, depart.getDate()) : null;
+      const banque = p.credit_banque ? ` ${esc(p.credit_banque)}` : '';
+
+      // Échéances passées (> 5 j) encore marquées "Non payé"
+      const late = [];
+      Object.keys(reg).forEach(y => Object.keys(reg[y]).forEach(m => {
+        const e = reg[y][m];
+        if (e.statut === 'verse') return;
+        const due = dueOf(parseInt(y,10), parseInt(m,10));
+        if (Math.floor((now - due) / 86400000) > 5) late.push({ y, m });
+      }));
+      if (late.length) {
+        late.sort((a,b) => (a.y+a.m).localeCompare(b.y+b.m));
+        const last = late[late.length-1];
+        alerts.push({ prop: p, urgent: true, tab: 'financement', year: last.y,
+          text: `Crédit${banque} — ${esc(propLabel(p))} : ${late.length} échéance${late.length>1?'s':''} non pointée${late.length>1?'s':''} (dernière : ${MN[parseInt(last.m,10)-1]} ${last.y})` });
+      }
+
+      // Prochaine échéance dans les 7 jours
+      if (fin && now >= fin) return;
+      let due = dueOf(now.getFullYear(), now.getMonth()+1);
+      if (due < now) due = dueOf(now.getFullYear(), now.getMonth()+2);
+      const d = Math.round((due - now) / 86400000);
+      if (d < 0 || d > 7) return;
+      const y = String(due.getFullYear()), m = String(due.getMonth()+1).padStart(2,'0');
+      const entry = reg[y] && reg[y][m];
+      if (entry && entry.statut === 'verse') return;
+      const montant = parseNum((entry && entry.mensualite) || p.credit_mensualite);
+      alerts.push({ prop: p, days: d, tab: 'financement', year: y,
+        text: `Prélèvement crédit${banque} à venir — ${esc(propLabel(p))} : ${due.toLocaleDateString('fr-FR')}${montant ? ', ' + formatMoney(montant) : ''}` });
     });
     return alerts;
   }
@@ -1848,10 +1904,11 @@ html, body {
       </div>
     `;
 
-    const loyerAlertsHtml = loyerAlerts.map(a => `<div class="alert-row urgent">${a.text}</div>`).join('');
-    const upcomingRentHtml = getUpcomingRentAlerts(properties).map(a => `<div class="alert-row">${a.text}</div>`).join('');
-    const echAlertsHtml = alerts.map(a => `<div class="alert-row ${a.days<=7?'urgent':''}">${alertText(a)}</div>`).join('');
-        const alertsHtml = (loyerAlertsHtml + upcomingRentHtml + echAlertsHtml) || `<div class="gen-note">Aucune alerte à signaler pour le moment.</div>`;
+    const loyerAlertsHtml = loyerAlerts.map(a => `<div class="alert-row urgent"${alertAttrs(a)}>${a.text}</div>`).join('');
+    const upcomingRentHtml = getUpcomingRentAlerts(properties).map(a => `<div class="alert-row"${alertAttrs(a)}>${a.text}</div>`).join('');
+    const creditAlertsHtml = getCreditAlerts(properties).map(a => `<div class="alert-row ${a.urgent?'urgent':''}"${alertAttrs(a)}>${a.text}</div>`).join('');
+    const echAlertsHtml = alerts.map(a => `<div class="alert-row ${a.days<=7?'urgent':''}"${alertAttrs(a)}>${alertText(a)}</div>`).join('');
+        const alertsHtml = (loyerAlertsHtml + creditAlertsHtml + upcomingRentHtml + echAlertsHtml) || `<div class="gen-note">Aucune alerte à signaler pour le moment.</div>`;
 
     const listHtml = properties.map(p => `
       <div class="pl-row" data-goto="${p.id}">
@@ -2020,8 +2077,9 @@ html, body {
 
       const propAlerts = getAlerts([p]);
       const propLoyerAlerts = getLoyerAlerts([p]);
-      const bannerHtml = propLoyerAlerts.map(a => `<div class="alert-row urgent">${a.text}</div>`).join('')
-        + propAlerts.map(a => `<div class="alert-row ${a.days<=7?'urgent':''}">${alertText(a)}</div>`).join('');
+      const bannerHtml = propLoyerAlerts.map(a => `<div class="alert-row urgent"${alertAttrs(a)}>${a.text}</div>`).join('')
+        + getCreditAlerts([p]).map(a => `<div class="alert-row ${a.urgent?'urgent':''}"${alertAttrs(a)}>${a.text}</div>`).join('')
+        + propAlerts.map(a => `<div class="alert-row ${a.days<=7?'urgent':''}"${alertAttrs(a)}>${alertText(a)}</div>`).join('');
       const alertBanner = bannerHtml ? `<div class="alert-banner">${bannerHtml}</div>` : '';
 
       const tabsHtml = TABS.map(t => `<button class="tab-btn ${openTab===t.id?'active':''}" style="--tab-color:${t.color}" data-tab="${t.id}"><span class="icon">${ICONS[t.id]}</span>${t.label}</button>`).join('');
@@ -2212,6 +2270,21 @@ const menuToggle = document.getElementById('menu-toggle');
 
     app.querySelectorAll('.pl-row').forEach(el => {
             el.addEventListener('click', () => { selectedId = el.dataset.goto; touchedPropertyIds.add(selectedId); viewMode = 'detail'; openTab = null; mobileSidebarOpen = false; render(); });
+    });
+
+    app.querySelectorAll('.alert-row[data-alert-prop]').forEach(el => {
+      el.addEventListener('click', () => {
+        const p = properties.find(x => x.id === el.dataset.alertProp);
+        if (!p) return;
+        selectedId = p.id; touchedPropertyIds.add(selectedId); selectedSciId = p.sci_id; viewMode = 'detail';
+        openTab = el.dataset.alertTab || null; tabEditMode = false;
+        expandedLoyerYear = (openTab === 'loyer' && el.dataset.alertYear) ? el.dataset.alertYear : null;
+        expandedCreditYear = (openTab === 'financement' && el.dataset.alertYear) ? el.dataset.alertYear : null;
+        docAnalysisResult = null; docAnalysisError = ''; docUploadError = ''; inseeLookupResult = null; inseeLookupError = '';
+        mobileSidebarOpen = false;
+        render();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
     });
 
     app.querySelectorAll('.tab-btn').forEach(el => {
