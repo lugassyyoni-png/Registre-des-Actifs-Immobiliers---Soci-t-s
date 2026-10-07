@@ -838,14 +838,14 @@ html, body {
 
   function getAlerts(propList){
     const fields = [
-      {f: 'revision_date_prochaine', label: 'Révision de loyer', tab: 'loyer'},
-      {f: 'assurance_date', label: 'Renouvellement assurance', tab: 'assurance'}
+      {f: 'revision_date_prochaine', label: 'Révision de loyer', tab: 'loyer', seuil: 30},
+      {f: 'assurance_date', label: 'Renouvellement assurance', tab: 'assurance', seuil: 90}
     ];
     const alerts = [];
     propList.forEach(p => {
       fields.forEach(fl => {
         const d = daysUntil(p[fl.f]);
-        if (d !== null && d <= 90) {
+        if (d !== null && d <= fl.seuil) {
           alerts.push({ prop: p, label: fl.label, days: d, date: p[fl.f], tab: fl.tab });
         }
       });
